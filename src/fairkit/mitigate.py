@@ -73,6 +73,21 @@ def _predicted_dataset(
     return dataset_pred
 
 
+def _favorable_class_scores(model, X: pd.DataFrame, favorable_label: int = 0) -> np.ndarray:
+    """
+    Return P(favorable_label) per row, using whichever column index the
+    model's `classes_` actually assigns to that label — not assumed to be
+    column 1. AIF360's `BinaryLabelDataset.scores` must hold
+    P(favorable outcome); passing P(the other class) by mistake silently
+    inverts what these post-processing algorithms optimize for (this bit
+    us in early testing: calibrated_equalized_odds was inverting every
+    single prediction until this was fixed).
+    """
+    proba = model.predict_proba(X)
+    class_idx = list(model.classes_).index(favorable_label)
+    return proba[:, class_idx]
+
+
 def reject_option_classification(
     model,
     X_test: pd.DataFrame,
@@ -90,17 +105,13 @@ def reject_option_classification(
 
     Shifts predictions near the decision boundary in favor of the
     unprivileged group, within a fairness-metric-defined margin.
-
-    Note: with default thresholds this can collapse to predicting a single
-    class on small/imbalanced test sets. If that happens, narrow
-    `low_class_thresh`/`high_class_thresh` or try a different metric_name.
     """
     from aif360.algorithms.postprocessing import RejectOptionClassification
 
     privileged_groups, unprivileged_groups = _groups(sensitive_col, privileged_value)
     dataset_true = _to_binary_label_dataset(X_test, y_test, sensitive_col)
 
-    y_scores = model.predict_proba(X_test)[:, 1]
+    y_scores = _favorable_class_scores(model, X_test, favorable_label=0)
     y_pred = model.predict(X_test)
     dataset_pred = _predicted_dataset(dataset_true, y_pred, y_scores)
 
@@ -171,7 +182,7 @@ def calibrated_equalized_odds(
     privileged_groups, unprivileged_groups = _groups(sensitive_col, privileged_value)
     dataset_true = _to_binary_label_dataset(X_test, y_test, sensitive_col)
 
-    y_scores = model.predict_proba(X_test)[:, 1]
+    y_scores = _favorable_class_scores(model, X_test, favorable_label=0)
     y_pred = model.predict(X_test)
     dataset_pred = _predicted_dataset(dataset_true, y_pred, y_scores)
 

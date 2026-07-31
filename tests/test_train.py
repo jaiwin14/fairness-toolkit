@@ -50,7 +50,7 @@ def test_evaluate_model_returns_expected_keys(compas_split):
     expected_keys = {
         "model_name", "dataset_name", "mitigation", "sensitive_col",
         "accuracy", "demographic_parity_difference",
-        "equalized_odds_difference", "accuracy_by_group",
+        "equalized_odds_difference", "disparate_impact_ratio", "accuracy_by_group",
     }
     assert expected_keys.issubset(result.keys())
     assert 0.0 <= result["accuracy"] <= 1.0
