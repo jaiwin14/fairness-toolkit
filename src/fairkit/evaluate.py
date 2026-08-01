@@ -29,8 +29,12 @@ def disparate_impact_ratio(
 
     A ratio of 1.0 is the fairness ideal (both groups equally likely to
     receive the favorable prediction). Values far from 1.0 in either
-    direction indicate disparate treatment. Uses the same favorable-label
-    convention as `fairkit.mitigate` (0 = did not reoffend = favorable).
+    direction indicate disparate treatment.
+
+    `favorable_label` (default 0) matches `fairkit.datasets.compas`'s
+    convention; pass the value from whichever dataset module you're using
+    (e.g. `fairkit.datasets.adult.FAVORABLE_LABEL`, which is 1) — this
+    function makes no assumption about which class is "good."
 
     `privileged_value` is which value of the sensitive column counts as
     "privileged" (default 0, matching `fairkit.mitigate`'s convention for
@@ -63,6 +67,7 @@ def evaluate_model(
     model_name: str | None = None,
     dataset_name: str | None = None,
     mitigation: str | None = None,
+    favorable_label: int = 0,
 ) -> dict:
     """
     Evaluate a fitted model's accuracy and fairness on held-out data.
@@ -77,12 +82,16 @@ def evaluate_model(
         technique). If omitted, `model.predict(X_test)` is used.
     model_name, dataset_name, mitigation : optional labels carried through
         into the output row, for easy identification in a results table.
+    favorable_label : which label value is the favorable outcome, for the
+        disparate impact ratio (default 0, COMPAS's convention — pass the
+        dataset module's own FAVORABLE_LABEL for other datasets, e.g.
+        `fairkit.datasets.adult.FAVORABLE_LABEL`).
 
     Returns
     -------
     dict with keys: model_name, dataset_name, mitigation, sensitive_col,
         accuracy, demographic_parity_difference, equalized_odds_difference,
-        accuracy_by_group.
+        disparate_impact_ratio, accuracy_by_group.
     """
     if y_pred is None:
         if model is None:
@@ -94,7 +103,7 @@ def evaluate_model(
     accuracy = accuracy_score(y_test, y_pred)
     dp_diff = demographic_parity_difference(y_test, y_pred, sensitive_features=sensitive_features)
     eo_diff = equalized_odds_difference(y_test, y_pred, sensitive_features=sensitive_features)
-    di_ratio = disparate_impact_ratio(y_pred, sensitive_features)
+    di_ratio = disparate_impact_ratio(y_pred, sensitive_features, favorable_label=favorable_label)
 
     by_group = MetricFrame(
         metrics={"accuracy": accuracy_score},

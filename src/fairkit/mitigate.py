@@ -22,9 +22,13 @@ the fiddliest part of this module: AIF360 expects one combined DataFrame
 "privileged"/"unprivileged" groups expressed as dicts over the protected
 attribute's *encoded* column (e.g. `{"race_African-American": 0}`).
 
-Convention used throughout this module: label value 0 = favorable
-(did not reoffend), label value 1 = unfavorable (reoffended) — matching
-`is_recid` / `two_year_recid` as produced by the dataset loaders directly.
+Every function takes `favorable_label`/`unfavorable_label` parameters
+(default 0/1, matching `fairkit.datasets.compas`'s convention where 0 = did
+not reoffend). This is NOT a universal convention — `fairkit.datasets.adult`
+uses the opposite (1 = income >$50K = favorable). Always pass the values
+from the dataset module you're using rather than relying on the default;
+e.g. `reject_option_classification(..., favorable_label=adult.FAVORABLE_LABEL,
+unfavorable_label=adult.UNFAVORABLE_LABEL)`.
 """
 
 from __future__ import annotations
@@ -94,6 +98,8 @@ def reject_option_classification(
     y_test: pd.Series,
     sensitive_col: str,
     privileged_value: int = 0,
+    favorable_label: int = 0,
+    unfavorable_label: int = 1,
     metric_name: str = "Statistical parity difference",
     low_class_thresh: float = 0.01,
     high_class_thresh: float = 0.99,
@@ -109,9 +115,11 @@ def reject_option_classification(
     from aif360.algorithms.postprocessing import RejectOptionClassification
 
     privileged_groups, unprivileged_groups = _groups(sensitive_col, privileged_value)
-    dataset_true = _to_binary_label_dataset(X_test, y_test, sensitive_col)
+    dataset_true = _to_binary_label_dataset(
+        X_test, y_test, sensitive_col, favorable_label, unfavorable_label
+    )
 
-    y_scores = _favorable_class_scores(model, X_test, favorable_label=0)
+    y_scores = _favorable_class_scores(model, X_test, favorable_label=favorable_label)
     y_pred = model.predict(X_test)
     dataset_pred = _predicted_dataset(dataset_true, y_pred, y_scores)
 
@@ -135,6 +143,8 @@ def equalized_odds(
     y_test: pd.Series,
     sensitive_col: str,
     privileged_value: int = 0,
+    favorable_label: int = 0,
+    unfavorable_label: int = 1,
     seed: int = 42,
 ) -> np.ndarray:
     """
@@ -146,7 +156,9 @@ def equalized_odds(
     from aif360.algorithms.postprocessing import EqOddsPostprocessing
 
     privileged_groups, unprivileged_groups = _groups(sensitive_col, privileged_value)
-    dataset_true = _to_binary_label_dataset(X_test, y_test, sensitive_col)
+    dataset_true = _to_binary_label_dataset(
+        X_test, y_test, sensitive_col, favorable_label, unfavorable_label
+    )
 
     y_pred = model.predict(X_test)
     dataset_pred = _predicted_dataset(dataset_true, y_pred)
@@ -167,6 +179,8 @@ def calibrated_equalized_odds(
     y_test: pd.Series,
     sensitive_col: str,
     privileged_value: int = 0,
+    favorable_label: int = 0,
+    unfavorable_label: int = 1,
     cost_constraint: str = "fnr",
     seed: int = 42,
 ) -> np.ndarray:
@@ -180,9 +194,11 @@ def calibrated_equalized_odds(
     from aif360.algorithms.postprocessing import CalibratedEqOddsPostprocessing
 
     privileged_groups, unprivileged_groups = _groups(sensitive_col, privileged_value)
-    dataset_true = _to_binary_label_dataset(X_test, y_test, sensitive_col)
+    dataset_true = _to_binary_label_dataset(
+        X_test, y_test, sensitive_col, favorable_label, unfavorable_label
+    )
 
-    y_scores = _favorable_class_scores(model, X_test, favorable_label=0)
+    y_scores = _favorable_class_scores(model, X_test, favorable_label=favorable_label)
     y_pred = model.predict(X_test)
     dataset_pred = _predicted_dataset(dataset_true, y_pred, y_scores)
 
@@ -203,6 +219,8 @@ def adversarial_debiasing(
     X_test: pd.DataFrame,
     sensitive_col: str,
     privileged_value: int = 0,
+    favorable_label: int = 0,
+    unfavorable_label: int = 1,
     num_epochs: int = 50,
     batch_size: int = 128,
     seed: int = 42,
@@ -230,8 +248,18 @@ def adversarial_debiasing(
     from aif360.algorithms.inprocessing import AdversarialDebiasing
 
     privileged_groups, unprivileged_groups = _groups(sensitive_col, privileged_value)
-    dataset_train = _to_binary_label_dataset(X_train, y_train, sensitive_col)
-    dataset_test = _to_binary_label_dataset(X_test, pd.Series(np.zeros(len(X_test)), index=X_test.index), sensitive_col)
+    dataset_train = _to_binary_label_dataset(
+        X_train, y_train, sensitive_col, favorable_label, unfavorable_label
+    )
+    # dummy labels for the test set — AdversarialDebiasing.predict() ignores
+    # the label column entirely and only reads .features, but BinaryLabel-
+    # Dataset still requires a well-formed label column to construct.
+    dummy_labels = pd.Series(
+        np.full(len(X_test), unfavorable_label), index=X_test.index
+    )
+    dataset_test = _to_binary_label_dataset(
+        X_test, dummy_labels, sensitive_col, favorable_label, unfavorable_label
+    )
 
     tf1.reset_default_graph()
     sess = tf1.Session()

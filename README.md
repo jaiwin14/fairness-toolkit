@@ -88,11 +88,53 @@ models and targets. Reproducible via `scripts/run_compas_benchmark.py`.
 | two_year_recid | xgboost | calibrated_equalized_odds | 0.66 | 0.385 | 0.553 | 0.615 |
 | two_year_recid | adversarial_debiasing_nn | adversarial_debiasing | 0.673 | 0.043 | 0.012 | 0.94 |
 
+## Results: Adult Income
+
+Full results: [`results/adult_results.csv`](results/adult_results.csv)
+
+Baseline models here are much more accurate (0.80–0.86) than on COMPAS, but
+show *stronger* bias by disparate impact: the privileged group (male /
+White) gets the favorable prediction (income >$50K) at roughly **3x** the
+rate of the unprivileged group before mitigation (DI ratio ~2.97–3.20) —
+consistent with the well-documented gender/race income gap in this dataset.
+`equalized_odds` and `reject_option_classification` both bring DI ratio
+down substantially (to ~1.1–1.8) for a real but modest accuracy cost
+(2–7 points). `svc` starts far less biased than the other three models
+(DI ratio 1.88 at baseline) — worth noting this is model-dependent, not
+just dataset-dependent (explored further in Day 5's cross-dataset
+comparison).
+
+This benchmark reuses the exact same `train_models` / `evaluate_model` /
+mitigation functions as the COMPAS benchmark, with no dataset-specific
+branching in that code — the only things that change per dataset are the
+loader and the `favorable_label` / `privileged_value` conventions passed
+in, which is the generalization this day's work was building toward.
+
+| Model | Mitigation | Accuracy | DP diff | EO diff | DI ratio |
+|---|---|---|---|---|---|
+| logreg | none | 0.848 | 0.176 | 0.11 | 3.196 |
+| logreg | reject_option_classification | 0.781 | 0.048 | 0.161 | 1.144 |
+| logreg | equalized_odds | 0.822 | 0.087 | 0.003 | 1.64 |
+| logreg | calibrated_equalized_odds | 0.824 | 0.101 | 0.068 | 2.255 |
+| svc | none | 0.797 | 0.048 | 0.021 | 1.878 |
+| svc | reject_option_classification | 0.798 | 0.044 | 0.036 | 1.689 |
+| svc | equalized_odds | 0.793 | 0.045 | 0.013 | 1.779 |
+| svc | calibrated_equalized_odds | 0.797 | 0.054 | 0.01 | 2.113 |
+| gbc | none | 0.858 | 0.169 | 0.085 | 3.121 |
+| gbc | reject_option_classification | 0.81 | 0.04 | 0.161 | 1.128 |
+| gbc | equalized_odds | 0.831 | 0.093 | 0.011 | 1.703 |
+| gbc | calibrated_equalized_odds | 0.839 | 0.116 | 0.045 | 2.448 |
+| xgboost | none | 0.864 | 0.183 | 0.074 | 2.968 |
+| xgboost | reject_option_classification | 0.825 | 0.043 | 0.169 | 1.149 |
+| xgboost | equalized_odds | 0.841 | 0.105 | 0.001 | 1.669 |
+| xgboost | calibrated_equalized_odds | 0.847 | 0.134 | 0.057 | 2.442 |
+| adversarial_debiasing_nn | adversarial_debiasing | 0.829 | 0.048 | 0.174 | 1.327 |
+
 ## Status
 - [x] Day 1 — repo skeleton, environment, `load_compas()` loader + tests
 - [x] Day 2 — `train.py` / `evaluate.py` / `mitigate.py`
 - [x] Day 3 — full COMPAS benchmark + results table + tradeoff chart
-- [ ] Day 4 — Adult Income dataset
+- [x] Day 4 — Adult Income dataset + generalized (dataset-agnostic) pipeline
 - [ ] Day 5 — German Credit dataset + cross-dataset comparison
 - [ ] Day 6 — CLI packaging
 - [ ] Day 7 — final polish, docs, publish
