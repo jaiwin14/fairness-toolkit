@@ -130,11 +130,80 @@ in, which is the generalization this day's work was building toward.
 | xgboost | calibrated_equalized_odds | 0.847 | 0.134 | 0.057 | 2.442 |
 | adversarial_debiasing_nn | adversarial_debiasing | 0.829 | 0.048 | 0.174 | 1.327 |
 
+## Results: German Credit
+
+Full results: [`results/german_results.csv`](results/german_results.csv)
+
+Much smaller dataset (1000 rows) with noticeably less baseline bias than
+COMPAS or Adult for some models — `svc` starts with disparate impact ratio
+already close to 1.0 (0.99), while `logreg` and `gbc` show more (DI ratio
+~1.14 each, `xgboost` ~1.03). This is a useful contrast case for Day 5's
+cross-dataset comparison: when baseline bias is already small, post-processing
+mitigation has little genuine signal to correct and can do more harm than
+good — see below.
+
+| Model | Mitigation | Accuracy | DP diff | EO diff | DI ratio |
+|---|---|---|---|---|---|
+| logreg | none | 0.695 | 0.093 | 0.13 | 1.143 |
+| logreg | reject_option_classification | 0.655 | 0.045 | 0.1 | 0.903 |
+| logreg | equalized_odds | 0.605 | 0.007 | 0.05 | 1.011 |
+| logreg | calibrated_equalized_odds | 0.685 | 0.35 | 0.45 | 1.538 |
+| svc | none | 0.71 | 0.01 | 0.03 | 0.99 |
+| svc | reject_option_classification | 0.735 | 0.002 | 0.05 | 1.003 |
+| svc | equalized_odds | 0.7 | 0.01 | 0.025 | 0.99 |
+| svc | calibrated_equalized_odds | 0.72 | 0.024 | 0.125 | 1.026 |
+| gbc | none | 0.76 | 0.09 | 0.075 | 1.136 |
+| gbc | reject_option_classification | 0.775 | 0.007 | 0.05 | 0.99 |
+| gbc | equalized_odds | 0.745 | 0.031 | 0.05 | 1.045 |
+| gbc | calibrated_equalized_odds | 0.72 | 0.333 | 0.6 | 1.5 |
+| xgboost | none | 0.745 | 0.021 | 0.025 | 1.029 |
+| xgboost | reject_option_classification | 0.735 | 0.045 | 0.1 | 0.932 |
+| xgboost | equalized_odds | 0.74 | 0.014 | 0.025 | 1.019 |
+| xgboost | calibrated_equalized_odds | 0.725 | 0.093 | 0.15 | 1.124 |
+| adversarial_debiasing_nn | adversarial_debiasing | 0.7 | 0.0 | 0.0 | 1.0 |
+
+## Cross-dataset comparison
+
+Full table: [`results/cross_dataset_comparison.csv`](results/cross_dataset_comparison.csv) · Chart: [`results/cross_dataset_comparison.png`](results/cross_dataset_comparison.png)
+
+The central question this comparison was built to answer: **does bias
+mitigation help consistently, or is it dataset-dependent?** Counted across
+all 12 (dataset × model) combinations, by how often each technique made
+the disparate impact ratio *worse* instead of better:
+
+| Mitigation | Times fairness got worse | Mean improvement (Adult / COMPAS / German) |
+|---|---|---|
+| `equalized_odds` | **0 / 12** | 1.093 / 0.229 / 0.058 |
+| `reject_option_classification` | 1 / 12 | 1.513 / 0.221 / 0.035 |
+| `calibrated_equalized_odds` | **9 / 12** | 0.476 / -0.140 / -0.218 |
+
+**Findings:**
+- **`equalized_odds` is the most reliable technique tested** — it never
+  made fairness worse on any dataset or model in this benchmark, matching
+  what Days 3 and 4 already suggested individually. `reject_option_classification`
+  is close behind (one regression, on German Credit + xgboost).
+- **`calibrated_equalized_odds` is dataset-dependent in a genuinely bad
+  way** — it improved fairness on Adult but *worsened* it on COMPAS and
+  German Credit in most model/dataset combinations. Combined with Day 3's
+  finding that it optimizes a different fairness criterion than the one
+  measured here, the practical conclusion is: don't reach for calibrated
+  equalized odds by default — check what it actually optimizes for your
+  use case first.
+- **Mitigation benefit scales with how biased the baseline already was**,
+  not with the technique alone. Adult's baseline bias was severe (DI ratio
+  routinely 2–3), so mitigation there shows huge absolute improvements.
+  German Credit's baseline bias was often already small (DI ratio close
+  to 1.0 for `svc`/`xgboost`), leaving little genuine signal to correct —
+  which is also why `calibrated_equalized_odds` does the most damage there
+  (over-correcting into a new imbalance where there wasn't a large one to
+  begin with). **A mitigation technique's usefulness can't be judged in
+  isolation from how biased the starting model was.**
+
 ## Status
 - [x] Day 1 — repo skeleton, environment, `load_compas()` loader + tests
 - [x] Day 2 — `train.py` / `evaluate.py` / `mitigate.py`
 - [x] Day 3 — full COMPAS benchmark + results table + tradeoff chart
 - [x] Day 4 — Adult Income dataset + generalized (dataset-agnostic) pipeline
-- [ ] Day 5 — German Credit dataset + cross-dataset comparison
+- [x] Day 5 — German Credit dataset + cross-dataset comparison
 - [ ] Day 6 — CLI packaging
 - [ ] Day 7 — final polish, docs, publish

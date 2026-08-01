@@ -17,3 +17,17 @@ Canonical source / full documentation:
 https://archive.ics.uci.edu/dataset/2/adult
 
 License: CC BY 4.0.
+
+## german.data
+UCI Statlog (German Credit Data) dataset (Hofmann, 1994), 1000 rows, 20
+attributes. Same situation as adult.data: UCI's own archive isn't
+reachable from every network. Fetched from an unmodified mirror in a
+public fork of the AIF360 repository itself (aif360 ships instructions to
+download this file but not the file itself):
+
+    https://github.com/bhomass/AIF360/raw/master/aif360/data/raw/german/german.data
+
+Canonical source / full documentation:
+https://archive.ics.uci.edu/dataset/144/statlog+german+credit+data
+
+License: CC BY 4.0.
