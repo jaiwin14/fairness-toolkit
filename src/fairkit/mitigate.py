@@ -240,7 +240,7 @@ def adversarial_debiasing(
     disabled process-wide (handled here). Each call resets the default TF
     graph, so don't run this concurrently with other TF graph code.
     """
-    import tensorflow.compat.v1 as tf1
+    import tensorflow.compat.v1 as tf1  # type: ignore[import]
 
     if tf1.executing_eagerly():
         tf1.disable_eager_execution()
