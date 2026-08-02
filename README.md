@@ -8,6 +8,45 @@ dataset.
 > refactor. It will be filled in with real results (Day 3), the CLI
 > quickstart (Day 6), and the full writeup (Day 7).
 
+## Quickstart (CLI)
+
+After `pip install -e .`, a `fairkit` command is available:
+
+```bash
+$ fairkit list-datasets
+  adult     target=income
+  compas    target=two_year_recid
+  german    target=credit_risk
+
+$ fairkit list-models
+  gbc
+  logreg
+  svc
+  xgboost
+
+$ fairkit run --dataset compas --model xgboost --mitigation eqodds
+Running xgboost on compas (mitigation: equalized_odds)...
+
+  accuracy                      = 0.6528
+  demographic_parity_difference = 0.0335
+  equalized_odds_difference     = 0.0105
+  disparate_impact_ratio        = 0.9519  (1.0 = fair)
+
+$ fairkit benchmark --dataset compas
+=== dataset: compas ===
+  [logreg  ] baseline           acc=0.663
+  [logreg  ] reject_option_classification acc=0.663
+  ...
+Saved 17 rows to results/compas_cli_results.csv
+
+$ fairkit benchmark --dataset all --output results/
+# runs compas, adult, and german in sequence
+```
+
+`--mitigation` accepts the full technique name or a short alias: `roc`,
+`eqodds`, `ceo`, `adv`, or `none` for baseline. Run `fairkit --help` or
+`fairkit run --help` / `fairkit benchmark --help` for full option details.
+
 ## Repo structure
 ```
 fairness-toolkit/
@@ -15,11 +54,14 @@ fairness-toolkit/
 │   ├── datasets/       # per-dataset loaders (compas, adult, german)
 │   ├── train.py        # model training
 │   ├── mitigate.py     # bias mitigation wrappers
-│   └── evaluate.py     # fairness + accuracy evaluation
+│   ├── evaluate.py     # fairness + accuracy evaluation
+│   ├── registry.py     # per-dataset conventions (favorable_label, etc.)
+│   ├── benchmark.py     # dataset-agnostic benchmark runner (CLI's engine)
+│   └── cli.py          # `fairkit` command implementation
 ├── tests/              # pytest suite
 ├── notebooks/archive/  # original exploratory notebooks (kept for reference)
 ├── results/            # benchmark output (csv/png)
-├── cli.py              # command-line entry point
+├── cli.py              # thin shim -> fairkit.cli (also runnable directly)
 ├── requirements.txt
 └── pyproject.toml
 ```
@@ -205,5 +247,5 @@ the disparate impact ratio *worse* instead of better:
 - [x] Day 3 — full COMPAS benchmark + results table + tradeoff chart
 - [x] Day 4 — Adult Income dataset + generalized (dataset-agnostic) pipeline
 - [x] Day 5 — German Credit dataset + cross-dataset comparison
-- [ ] Day 6 — CLI packaging
+- [x] Day 6 — CLI packaging (`fairkit run` / `fairkit benchmark`)
 - [ ] Day 7 — final polish, docs, publish
