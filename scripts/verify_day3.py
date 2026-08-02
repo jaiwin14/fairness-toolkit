@@ -87,7 +87,7 @@ def main():
 
     # README should contain a real, non-placeholder results section.
     readme = (REPO_ROOT / "README.md").read_text()
-    check("README contains a Results section", "## Results: COMPAS" in readme)
+    check("README contains a COMPAS results section", "<b>COMPAS</b>" in readme)
     check("README results table is populated (not just a placeholder)", "| is_recid |" in readme)
 
     print("=" * 60)

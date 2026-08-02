@@ -1,28 +1,43 @@
 # fairkit
 
-A cross-dataset fairness benchmarking and bias-mitigation toolkit, refactored
-from three Colab notebooks originally built around the ProPublica COMPAS
-dataset.
+A cross-dataset bias-mitigation benchmarking toolkit: trains classifiers
+on three well-known fairness datasets (COMPAS, Adult Income, German
+Credit), measures how biased they are against protected groups, applies
+four standard mitigation techniques from AIF360, and honestly reports
+which techniques actually work — and which don't, despite looking fine on
+a single dataset.
 
-> Work in progress — this README is a placeholder created on Day 1 of the
-> refactor. It will be filled in with real results (Day 3), the CLI
-> quickstart (Day 6), and the full writeup (Day 7).
+Originally three exploratory Colab notebooks built around the ProPublica
+COMPAS recidivism dataset (`notebooks/archive/`). Rebuilt over one week
+into a tested, installable Python package with a CLI.
+
+## The headline finding
+
+Tested across 3 datasets × 4 models × 3 post-processing mitigation
+techniques (36 combinations total): **`equalized_odds` never made fairness
+worse — 0/36. `calibrated_equalized_odds` made it worse in 9/12 dataset×model
+cases where it was compared head-to-head.** A technique that looks like a
+safe default on one dataset can quietly backfire on another. Full analysis
+in [Cross-dataset comparison](#cross-dataset-comparison) below.
 
 ## Quickstart (CLI)
 
-After `pip install -e .`, a `fairkit` command is available:
+```bash
+git clone https://github.com/jaiwin14/fairness-toolkit.git
+cd fairness-toolkit
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+pip install -e .
+```
+
+Requires Python 3.10–3.13 (TensorFlow, a dependency for one mitigation
+technique, doesn't yet support 3.14).
 
 ```bash
 $ fairkit list-datasets
   adult     target=income
   compas    target=two_year_recid
   german    target=credit_risk
-
-$ fairkit list-models
-  gbc
-  logreg
-  svc
-  xgboost
 
 $ fairkit run --dataset compas --model xgboost --mitigation eqodds
 Running xgboost on compas (mitigation: equalized_odds)...
@@ -35,63 +50,98 @@ Running xgboost on compas (mitigation: equalized_odds)...
 $ fairkit benchmark --dataset compas
 === dataset: compas ===
   [logreg  ] baseline           acc=0.663
-  [logreg  ] reject_option_classification acc=0.663
   ...
 Saved 17 rows to results/compas_cli_results.csv
 
-$ fairkit benchmark --dataset all --output results/
-# runs compas, adult, and german in sequence
+$ fairkit benchmark --dataset all --output results/   # all 3 datasets
 ```
 
-`--mitigation` accepts the full technique name or a short alias: `roc`,
-`eqodds`, `ceo`, `adv`, or `none` for baseline. Run `fairkit --help` or
-`fairkit run --help` / `fairkit benchmark --help` for full option details.
+`--mitigation` accepts a full technique name or a short alias: `roc`,
+`eqodds`, `ceo`, `adv`, or `none`. Run `fairkit --help`,
+`fairkit run --help`, or `fairkit benchmark --help` for full options.
 
-## Repo structure
-```
-fairness-toolkit/
-├── src/fairkit/        # library code
-│   ├── datasets/       # per-dataset loaders (compas, adult, german)
-│   ├── train.py        # model training
-│   ├── mitigate.py     # bias mitigation wrappers
-│   ├── evaluate.py     # fairness + accuracy evaluation
-│   ├── registry.py     # per-dataset conventions (favorable_label, etc.)
-│   ├── benchmark.py     # dataset-agnostic benchmark runner (CLI's engine)
-│   └── cli.py          # `fairkit` command implementation
-├── tests/              # pytest suite
-├── notebooks/archive/  # original exploratory notebooks (kept for reference)
-├── results/            # benchmark output (csv/png)
-├── cli.py              # thin shim -> fairkit.cli (also runnable directly)
-├── requirements.txt
-└── pyproject.toml
+```bash
+pytest tests/ -v   # 45 tests
 ```
 
-## Results: COMPAS
+## Methodology
+
+**Datasets** (all binary classification, one or more protected attributes):
+| Dataset | Task | Protected attribute(s) used | Rows |
+|---|---|---|---|
+| [COMPAS](https://github.com/propublica/compas-analysis) | predict recidivism | `sex`, `race` | 7,214 |
+| [Adult Income](https://archive.ics.uci.edu/dataset/2/adult) | predict income >$50K | `sex`, `race` | 30,162 |
+| [German Credit](https://archive.ics.uci.edu/dataset/144/statlog+german+credit+data) | predict credit risk | `sex`, `age` | 1,000 |
+
+**Models**: Logistic Regression, SVM, Gradient Boosting, XGBoost — all
+scikit-learn-compatible, trained identically across all three datasets via
+one shared `train_models()` function.
+
+**Fairness metrics** ([`fairlearn`](https://fairlearn.org/)): demographic
+parity difference, equalized odds difference, disparate impact ratio
+(1.0 = fair).
+
+**Mitigation techniques** ([AIF360](https://aif360.res.ibm.com/)):
+- *Post-processing* (adjust an already-fitted model's predictions):
+  Reject Option Classification, Equalized Odds, Calibrated Equalized Odds
+- *In-processing* (trains its own model with fairness built into
+  training): Adversarial Debiasing
+
+**Design principle**: the training/evaluation/mitigation code has zero
+dataset-specific branching. Each dataset only supplies a loader and its
+own `favorable_label`/`privileged_value` convention (e.g. COMPAS treats
+label 0 as favorable; Adult and German treat label 1 as favorable — the
+same mitigation functions handle both correctly). See `src/fairkit/registry.py`.
+
+## Cross-dataset comparison
+
+Full table: [`results/cross_dataset_comparison.csv`](results/cross_dataset_comparison.csv) · Chart: [`results/cross_dataset_comparison.png`](results/cross_dataset_comparison.png)
+
+The question this was built to answer: **does bias mitigation help
+consistently, or is it dataset-dependent?** Counted across all 12
+(dataset × model) combinations, by how often each technique made the
+disparate impact ratio *worse* instead of better:
+
+| Mitigation | Times fairness got worse | Mean improvement (Adult / COMPAS / German) |
+|---|---|---|
+| `equalized_odds` | **0 / 12** | 1.093 / 0.229 / 0.058 |
+| `reject_option_classification` | 1 / 12 | 1.513 / 0.221 / 0.035 |
+| `calibrated_equalized_odds` | **9 / 12** | 0.476 / -0.140 / -0.218 |
+
+**Findings:**
+- **`equalized_odds` is the most reliable technique tested** — never made
+  fairness worse on any dataset or model. `reject_option_classification`
+  is close behind (one regression, German Credit + xgboost).
+- **`calibrated_equalized_odds` is dataset-dependent in a genuinely bad
+  way** — improved fairness on Adult but *worsened* it on COMPAS and
+  German Credit in most cases. It optimizes a different fairness criterion
+  (per-group score calibration under a false-negative-rate cost) than the
+  metrics in this table measure — a real instance of the
+  Kleinberg/Chouldechova impossibility result that satisfying one fairness
+  definition can conflict with another. Don't reach for it by default;
+  check what it actually optimizes for your use case first.
+- **Mitigation benefit scales with how biased the baseline already was**,
+  not with the technique alone. Adult's baseline bias was severe (DI ratio
+  routinely 2–3), so mitigation shows huge absolute improvements there.
+  German Credit's baseline bias was often already small (DI ratio close to
+  1.0), leaving little genuine signal to correct — which is also why
+  `calibrated_equalized_odds` does the most damage there (over-correcting
+  where there wasn't much to fix). **A technique's usefulness can't be
+  judged in isolation from how biased the starting model was.**
+
+## Results by dataset
+
+<details>
+<summary><b>COMPAS</b> — baseline DP diff 0.14–0.33, DI ratio 0.63–0.82 (click to expand full table)</summary>
 
 Full results: [`results/compas_results.csv`](results/compas_results.csv) · Chart: [`results/compas_tradeoff.png`](results/compas_tradeoff.png)
 
-Baseline models show real, measurable bias against the unprivileged group
-(sex_Male=0) before any mitigation — demographic parity difference ranges
-0.14–0.33 and disparate impact ratio ranges 0.63–0.82 (1.0 = fair) across
-models and targets. Reproducible via `scripts/run_compas_benchmark.py`.
-
-**Findings:**
-- **Equalized Odds** and **Reject Option Classification** both substantially
-  reduce demographic parity / equalized odds difference (down to ~0.01–0.05,
-  DI ratio pushed to ~0.91–0.99) for a modest accuracy cost — and Reject
-  Option Classification sometimes matches or slightly *beats* baseline
-  accuracy while still improving fairness.
-- **Calibrated Equalized Odds** keeps accuracy close to baseline (~0.65) but
-  actually *increases* demographic parity / equalized odds difference in
-  this benchmark. This isn't a bug — it optimizes a different fairness
-  criterion (per-group score calibration under a false-negative-rate cost)
-  than the metrics in this table measure, a known tension in fairness ML:
-  satisfying one fairness definition can conflict with another
-  (Kleinberg/Chouldechova impossibility results). Worth knowing before
-  picking a mitigation technique based on a single metric.
-- **Adversarial Debiasing** (in-processing) gets the best of both worlds
-  here — accuracy comparable to or better than baseline (0.67–0.69) with
-  low demographic parity / equalized odds difference (~0.03–0.04).
+Equalized Odds and Reject Option Classification substantially reduce bias
+(DP/EO diff down to ~0.01–0.05) for a modest accuracy cost — Reject Option
+Classification sometimes matches or slightly *beats* baseline accuracy
+while still improving fairness. Adversarial Debiasing gets the best of
+both worlds: accuracy comparable to or better than baseline (0.67–0.69)
+with low DP/EO diff (~0.03–0.04).
 
 | Target | Model | Mitigation | Accuracy | DP diff | EO diff | DI ratio |
 |---|---|---|---|---|---|---|
@@ -130,27 +180,22 @@ models and targets. Reproducible via `scripts/run_compas_benchmark.py`.
 | two_year_recid | xgboost | calibrated_equalized_odds | 0.66 | 0.385 | 0.553 | 0.615 |
 | two_year_recid | adversarial_debiasing_nn | adversarial_debiasing | 0.673 | 0.043 | 0.012 | 0.94 |
 
-## Results: Adult Income
+</details>
+
+<details>
+<summary><b>Adult Income</b> — baseline DI ratio ~3.0 (strong gender/race income gap) (click to expand full table)</summary>
 
 Full results: [`results/adult_results.csv`](results/adult_results.csv)
 
-Baseline models here are much more accurate (0.80–0.86) than on COMPAS, but
+Baseline models are much more accurate (0.80–0.86) than on COMPAS, but
 show *stronger* bias by disparate impact: the privileged group (male /
-White) gets the favorable prediction (income >$50K) at roughly **3x** the
-rate of the unprivileged group before mitigation (DI ratio ~2.97–3.20) —
-consistent with the well-documented gender/race income gap in this dataset.
-`equalized_odds` and `reject_option_classification` both bring DI ratio
-down substantially (to ~1.1–1.8) for a real but modest accuracy cost
-(2–7 points). `svc` starts far less biased than the other three models
-(DI ratio 1.88 at baseline) — worth noting this is model-dependent, not
-just dataset-dependent (explored further in Day 5's cross-dataset
-comparison).
-
-This benchmark reuses the exact same `train_models` / `evaluate_model` /
-mitigation functions as the COMPAS benchmark, with no dataset-specific
-branching in that code — the only things that change per dataset are the
-loader and the `favorable_label` / `privileged_value` conventions passed
-in, which is the generalization this day's work was building toward.
+White) gets the favorable prediction at roughly **3x** the rate of the
+unprivileged group before mitigation — consistent with the well-documented
+income gap in this dataset. `equalized_odds` and
+`reject_option_classification` bring DI ratio down to ~1.1–1.8 for a
+modest accuracy cost (2–7 points). `svc` starts far less biased than the
+other three models (DI ratio 1.88 at baseline) — model-dependent, not just
+dataset-dependent.
 
 | Model | Mitigation | Accuracy | DP diff | EO diff | DI ratio |
 |---|---|---|---|---|---|
@@ -172,17 +217,19 @@ in, which is the generalization this day's work was building toward.
 | xgboost | calibrated_equalized_odds | 0.847 | 0.134 | 0.057 | 2.442 |
 | adversarial_debiasing_nn | adversarial_debiasing | 0.829 | 0.048 | 0.174 | 1.327 |
 
-## Results: German Credit
+</details>
+
+<details>
+<summary><b>German Credit</b> — smaller dataset, less baseline bias, mitigation can backfire (click to expand full table)</summary>
 
 Full results: [`results/german_results.csv`](results/german_results.csv)
 
-Much smaller dataset (1000 rows) with noticeably less baseline bias than
+Much smaller dataset (1,000 rows) with noticeably less baseline bias than
 COMPAS or Adult for some models — `svc` starts with disparate impact ratio
 already close to 1.0 (0.99), while `logreg` and `gbc` show more (DI ratio
-~1.14 each, `xgboost` ~1.03). This is a useful contrast case for Day 5's
-cross-dataset comparison: when baseline bias is already small, post-processing
-mitigation has little genuine signal to correct and can do more harm than
-good — see below.
+~1.14 each, `xgboost` ~1.03). Useful contrast case: when baseline bias is
+already small, post-processing mitigation has little genuine signal to
+correct and can do more harm than good (see Cross-dataset comparison above).
 
 | Model | Mitigation | Accuracy | DP diff | EO diff | DI ratio |
 |---|---|---|---|---|---|
@@ -204,48 +251,59 @@ good — see below.
 | xgboost | calibrated_equalized_odds | 0.725 | 0.093 | 0.15 | 1.124 |
 | adversarial_debiasing_nn | adversarial_debiasing | 0.7 | 0.0 | 0.0 | 1.0 |
 
-## Cross-dataset comparison
+</details>
 
-Full table: [`results/cross_dataset_comparison.csv`](results/cross_dataset_comparison.csv) · Chart: [`results/cross_dataset_comparison.png`](results/cross_dataset_comparison.png)
+## Repo structure
 
-The central question this comparison was built to answer: **does bias
-mitigation help consistently, or is it dataset-dependent?** Counted across
-all 12 (dataset × model) combinations, by how often each technique made
-the disparate impact ratio *worse* instead of better:
+```
+fairness-toolkit/
+├── src/fairkit/
+│   ├── datasets/        # compas.py, adult.py, german.py loaders
+│   ├── train.py         # train_models(): LogReg/SVC/GBC/XGBoost
+│   ├── evaluate.py      # evaluate_model(): accuracy + fairness metrics
+│   ├── mitigate.py      # 4 AIF360 mitigation techniques, dataset-agnostic
+│   ├── registry.py      # per-dataset conventions (favorable_label, etc.)
+│   ├── benchmark.py     # dataset-agnostic benchmark runner (CLI's engine)
+│   └── cli.py           # `fairkit` command implementation
+├── tests/                # 45 pytest tests
+├── scripts/
+│   ├── verify_day{1..6}.py       # one checkpoint script per build day
+│   ├── run_{compas,adult,german}_benchmark.py
+│   ├── plot_compas_tradeoff.py
+│   └── compare_benchmarks.py     # cross-dataset comparison
+├── notebooks/archive/    # original 3 exploratory notebooks (untouched)
+├── data/                 # raw dataset files + provenance (data/README.md)
+├── results/               # all benchmark CSVs, charts
+├── cli.py                # thin shim -> fairkit.cli (also runnable directly)
+├── requirements.txt
+└── pyproject.toml
+```
 
-| Mitigation | Times fairness got worse | Mean improvement (Adult / COMPAS / German) |
-|---|---|---|
-| `equalized_odds` | **0 / 12** | 1.093 / 0.229 / 0.058 |
-| `reject_option_classification` | 1 / 12 | 1.513 / 0.221 / 0.035 |
-| `calibrated_equalized_odds` | **9 / 12** | 0.476 / -0.140 / -0.218 |
+## Reproducibility
 
-**Findings:**
-- **`equalized_odds` is the most reliable technique tested** — it never
-  made fairness worse on any dataset or model in this benchmark, matching
-  what Days 3 and 4 already suggested individually. `reject_option_classification`
-  is close behind (one regression, on German Credit + xgboost).
-- **`calibrated_equalized_odds` is dataset-dependent in a genuinely bad
-  way** — it improved fairness on Adult but *worsened* it on COMPAS and
-  German Credit in most model/dataset combinations. Combined with Day 3's
-  finding that it optimizes a different fairness criterion than the one
-  measured here, the practical conclusion is: don't reach for calibrated
-  equalized odds by default — check what it actually optimizes for your
-  use case first.
-- **Mitigation benefit scales with how biased the baseline already was**,
-  not with the technique alone. Adult's baseline bias was severe (DI ratio
-  routinely 2–3), so mitigation there shows huge absolute improvements.
-  German Credit's baseline bias was often already small (DI ratio close
-  to 1.0 for `svc`/`xgboost`), leaving little genuine signal to correct —
-  which is also why `calibrated_equalized_odds` does the most damage there
-  (over-correcting into a new imbalance where there wasn't a large one to
-  begin with). **A mitigation technique's usefulness can't be judged in
-  isolation from how biased the starting model was.**
+Every claim above is backed by a script you can re-run yourself — nothing
+here is hand-typed. Each build day has its own checkpoint script:
 
-## Status
-- [x] Day 1 — repo skeleton, environment, `load_compas()` loader + tests
-- [x] Day 2 — `train.py` / `evaluate.py` / `mitigate.py`
-- [x] Day 3 — full COMPAS benchmark + results table + tradeoff chart
-- [x] Day 4 — Adult Income dataset + generalized (dataset-agnostic) pipeline
-- [x] Day 5 — German Credit dataset + cross-dataset comparison
-- [x] Day 6 — CLI packaging (`fairkit run` / `fairkit benchmark`)
-- [ ] Day 7 — final polish, docs, publish
+```bash
+pytest tests/ -v                # 45 tests
+python scripts/verify_day1.py   # ... through verify_day6.py
+```
+
+All results were regenerated from a completely clean install (fresh venv,
+`pip install -r requirements.txt`, `pip install -e .`) before being copied
+into this README, specifically to catch packaging or environment issues a
+"works on my machine" result would miss.
+
+## Data sources & citation
+
+- **COMPAS**: ProPublica's [compas-analysis](https://github.com/propublica/compas-analysis) repository.
+- **Adult Income**: Becker, B. & Kohavi, R. (1996). *Adult* [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5XW20
+- **German Credit**: Hofmann, H. (1994). *Statlog (German Credit Data)* [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5NC77
+
+Both UCI datasets are CC BY 4.0. See `data/README.md` for exact file
+provenance (both were fetched from public GitHub mirrors rather than UCI's
+archive directly — see that file for why).
+
+## License
+
+MIT — see [LICENSE](LICENSE).

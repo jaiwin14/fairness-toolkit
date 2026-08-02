@@ -6,4 +6,5 @@ __pycache__/
 build/
 dist/
 .ipynb_checkpoints/
-
+.DS_Store
+*.log

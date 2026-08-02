@@ -96,7 +96,7 @@ def main():
     )
 
     readme = (REPO_ROOT / "README.md").read_text()
-    check("README contains an Adult Income results section", "## Results: Adult Income" in readme)
+    check("README contains an Adult Income results section", "<b>Adult Income</b>" in readme)
 
     print("=" * 60)
     if failures:

@@ -89,7 +89,7 @@ def main():
         )
 
     readme = (REPO_ROOT / "README.md").read_text()
-    check("README contains a German Credit results section", "## Results: German Credit" in readme)
+    check("README contains a German Credit results section", "<b>German Credit</b>" in readme)
     check("README contains a cross-dataset comparison section", "## Cross-dataset comparison" in readme)
 
     print("=" * 60)
