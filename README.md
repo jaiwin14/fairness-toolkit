@@ -8,8 +8,7 @@ which techniques actually work — and which don't, despite looking fine on
 a single dataset.
 
 Originally three exploratory Colab notebooks built around the ProPublica
-COMPAS recidivism dataset (`notebooks/archive/`). Rebuilt over one week
-into a tested, installable Python package with a CLI.
+COMPAS recidivism dataset (`notebooks/archive/`). Rebuilt into a tested, installable Python package with a CLI.
 
 ## The headline finding
 
